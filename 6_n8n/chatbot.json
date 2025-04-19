@@ -1,0 +1,111 @@
+{
+  "name": "chatbot",
+  "nodes": [
+    {
+      "parameters": {
+        "public": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -340,
+        0
+      ],
+      "id": "66f0efaa-c252-4242-be7d-03b08af15ed5",
+      "name": "When chat message received",
+      "webhookId": "13f9d7cd-5234-40cb-8a21-bc3bf09664af"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://0bd6-110-137-38-37.ngrok-free.app/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"user_query\": \"={{ $json.chatInput }}\",\n  \"chat_history\": []\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -100,
+        0
+      ],
+      "id": "6c6cbe41-de42-4491-b45d-58d97174836e",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d01b91bf-e1af-4171-a8c6-5e0aa69a373f",
+              "name": "answer",
+              "value": "={{ $json.answer }}",
+              "type": "string"
+            },
+            {
+              "id": "dc67f5da-2571-4e91-8b29-307ea8af30f9",
+              "name": "chat_history",
+              "value": "={{ $json.chat_history }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {
+          "ignoreConversionErrors": false,
+          "dotNotation": false
+        }
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        120,
+        0
+      ],
+      "id": "76c0ea62-dc22-48a7-a069-5a4ec298d35c",
+      "name": "Edit Fields",
+      "alwaysOutputData": false
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "771f3008-d79a-4e6a-b154-7a807684ee09",
+  "meta": {
+    "instanceId": "44686b69bd497b760e1f756f17276c1c60dfb0656385f306cb2abdeda14ad3e7"
+  },
+  "id": "7JkMvS6Hb2BlajOY",
+  "tags": []
+}

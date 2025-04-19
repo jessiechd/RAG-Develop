@@ -1,0 +1,131 @@
+{
+  "name": "Knowledge Base",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        -20
+      ],
+      "id": "b2491cd8-bba2-4d06-8e75-847debeb7ded",
+      "name": "When clicking ‘Test workflow’"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://def5-2001-448a-114d-1b97-a0c6-8c2e-6a08-c21b.ngrok-free.app/parsing",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        -20
+      ],
+      "id": "deeaaeea-cbb6-400c-a0d1-f761fafee3fd",
+      "name": "PARSING"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://7616-2001-448a-114d-1b97-a0c6-8c2e-6a08-c21b.ngrok-free.app/image_description",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -200,
+        -20
+      ],
+      "id": "5aef8c8d-ff82-4bf0-98d3-52c0a98d606e",
+      "name": "IMAGE DESCRIPTION"
+    },
+    {
+      "parameters": {
+        "url": "https://be0b-2001-448a-114d-1b97-a0c6-8c2e-6a08-c21b.ngrok-free.app/chunking",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        20,
+        -20
+      ],
+      "id": "fdb2c12c-5b8a-4d4d-82cb-2d830fed7ed9",
+      "name": "CHUNKING"
+    },
+    {
+      "parameters": {
+        "url": "https://1ba2-2001-448a-114d-1b97-a0c6-8c2e-6a08-c21b.ngrok-free.app/embedding",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        -20
+      ],
+      "id": "2dd1546a-94c2-4cb3-8da8-9b1388a8e630",
+      "name": "EMBEDDING STORE"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Test workflow’": {
+      "main": [
+        [
+          {
+            "node": "PARSING",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PARSING": {
+      "main": [
+        [
+          {
+            "node": "IMAGE DESCRIPTION",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IMAGE DESCRIPTION": {
+      "main": [
+        [
+          {
+            "node": "CHUNKING",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CHUNKING": {
+      "main": [
+        [
+          {
+            "node": "EMBEDDING STORE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "28e47470-58de-4752-b098-979418196708",
+  "meta": {
+    "instanceId": "44686b69bd497b760e1f756f17276c1c60dfb0656385f306cb2abdeda14ad3e7"
+  },
+  "id": "Lc9nc89yVWmnmOr7",
+  "tags": []
+}

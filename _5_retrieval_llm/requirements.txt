@@ -1,0 +1,17 @@
+numpy
+torch
+transformers
+supabase
+openai
+python-dotenv
+scipy
+nltk
+psycopg2
+fastapi
+uvicorn
+vecs
+pgvector==0.3.2
+psycopg2-binary
+# pip uninstall torch torchvision torchaudio
+# then do this:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
