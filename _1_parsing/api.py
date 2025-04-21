@@ -10,7 +10,12 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from _1_parsing.main import convert_and_save, extract_nodes
 
-app = FastAPI()
+app = FastAPI(
+    title="Parsing API",
+    docs_url="/docs",
+    redoc_url=None,
+    openapi_url="/openapi.json"
+)
 
 
 app.add_middleware(
