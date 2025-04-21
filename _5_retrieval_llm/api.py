@@ -1,5 +1,5 @@
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, HTTPException
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 import uvicorn
@@ -11,15 +11,17 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from _5_retrieval_llm.main import query_supabase, call_openai_llm
 
-llm_app = FastAPI(title="Retrieval and LLM API")
+# llm_app = FastAPI(title="Retrieval and LLM API")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+router = APIRouter()
+
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 class QueryRequest(BaseModel):
     user_query: str
@@ -37,11 +39,11 @@ def sanitize(obj):
         return tuple(sanitize(i) for i in obj)
     return obj
 
-@llm_app.get("/")
+@router.get("/")
 def root():
     return {"message": "Document Retrieval and LLM API is running."}
 
-@llm_app.post("/query")
+@router.post("/query")
 def query_documents(request: QueryRequest):
     try:
         retrieved_chunks = query_supabase(request.user_query)
@@ -51,7 +53,7 @@ def query_documents(request: QueryRequest):
         print("Error in /query:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
-@llm_app.post("/chat")
+@router.post("/chat")
 def chat_with_llm(request: QueryRequest):
     try:
         retrieved_chunks = query_supabase(request.user_query)
@@ -65,4 +67,3 @@ def chat_with_llm(request: QueryRequest):
 # if __name__ == "__main__":
 #     uvicorn.run(app, host="127.0.0.1", port=8400)
 
-app = llm_app

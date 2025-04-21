@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import APIRouter
 import os
 import json
 import sys
@@ -9,16 +9,16 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from _3_chunking.main import process_markdown
 
-app = FastAPI()
+router = APIRouter()
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -28,7 +28,7 @@ OUTPUT_FOLDER = BASE_DIR.parent / "_4_embedding_store" / "input_json"
 
 # os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-@app.get("/chunking")
+@router.get("/chunking")
 def process_markdown_files():
     """Process all markdown files in input_md and return success message."""
     for file_name in os.listdir(INPUT_FOLDER):
@@ -40,7 +40,7 @@ def process_markdown_files():
     
     return {"message": "Processing completed. JSON files saved in output_json"}
 
-@app.get("/")
+@router.get("/")
 def home():
     return {"message": "API is running!"}
 

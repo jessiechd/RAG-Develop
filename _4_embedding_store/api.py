@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException
 import json
 import os
 import uvicorn
@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from _4_embedding_store.main import store_chunks_in_supabase
 
-app = FastAPI()
+router = APIRouter()
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,11 +23,11 @@ app.add_middleware(
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_FOLDER = BASE_DIR / "input_json"
 
-@app.get("/")
+@router.get("/")
 def home():
     return {"message": "API is running!"}
 
-@app.get("/embedding")
+@router.get("/embedding")
 def process_json_files():
     for filename in os.listdir(INPUT_FOLDER):
         if filename.endswith(".json"):

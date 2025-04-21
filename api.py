@@ -18,6 +18,9 @@ def import_router(path):
 
 parsing_router = import_router(os.path.abspath("_1_parsing/api.py"))
 image_router = import_router(os.path.abspath("_2_image/api.py"))
+chunking_router = import_router(os.path.abspath("_3_chunking/api.py"))
+embedding_router = import_router(os.path.abspath("_4_embedding_store/api.py"))
+llm_router = import_router(os.path.abspath("_5_retrieval_llm/api.py"))
 
 
 
@@ -39,6 +42,10 @@ app.add_middleware(
 
 app.include_router(parsing_router, prefix="/upload")
 app.include_router(image_router, prefix="/img")
+app.include_router(chunking_router, prefix="/markdown")
+app.include_router(embedding_router, prefix="/store")
+app.include_router(llm_router, prefix="/llm")
+
 
 
 
