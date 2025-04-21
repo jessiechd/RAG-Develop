@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import APIRouter, UploadFile, File
 from pathlib import Path
 import logging
 import sys
@@ -10,28 +10,23 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from _1_parsing.main import convert_and_save, extract_nodes
 
-app = FastAPI(
-    title="Parsing API",
-    docs_url="/docs",
-    redoc_url=None,
-    openapi_url="/openapi.json"
-)
+router = APIRouter()
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "input_pdfs"
 OUTPUT_DIR = BASE_DIR.parent / "_2_image" / "input_md"
 
 
-@app.post("/parsing")
+@router.post("/parsing")
 async def upload_and_process_file(file: UploadFile = File(...)):
     file_location = INPUT_DIR / file.filename
     with open(file_location, "wb") as buffer:
@@ -52,7 +47,7 @@ async def upload_and_process_file(file: UploadFile = File(...)):
     else:
         return {"message": "Gagal memproses file."}
 
-@app.get("/")
+@router.get("/")
 def home():
     return {"message": "API is running!"}
 

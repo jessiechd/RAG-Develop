@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import APIRouter
 import sys
 import os
 from pathlib import Path
@@ -9,15 +9,15 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from _2_image.main import process_markdown_files
 
-app = FastAPI()
+router = APIRouter()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "input_md"
@@ -26,7 +26,7 @@ OUTPUT_DIR = BASE_DIR.parent / "_3_chunking" / "input_md"
 # INPUT_FOLDER = r"C:\\Grader\\RAG-Develop-main\\_2_image\\input_md"
 # OUTPUT_FOLDER = r"C:\\Grader\\RAG-Develop-main\\_2_image\\output_md"
 
-@app.post("/image_description")
+@router.post("/image_description")
 def process_markdown():
     """
     Endpoint to process markdown files with images.
@@ -37,7 +37,7 @@ def process_markdown():
     process_markdown_files(INPUT_DIR, OUTPUT_DIR)
     return {"message": "Processing completed", "output_folder": OUTPUT_DIR}
 
-@app.get("/")
+@router.get("/")
 def home():
     return {"message": "API is running!"}
 

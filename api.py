@@ -10,17 +10,22 @@ import requests
 import shutil
 import os
 
-def import_api(path):
+def import_router(path):
     spec = importlib.util.spec_from_file_location("api", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.app
+    return module.router
 
-parsing_app = import_api(os.path.abspath("_1_parsing/api.py"))
-image_app = import_api(os.path.abspath("_2_image/api.py"))
-chunking_app = import_api(os.path.abspath("_3_chunking/api.py"))
-embedding_app = import_api(os.path.abspath("_4_embedding_store/api.py"))
-llm_app = import_api(os.path.abspath("_5_retrieval_llm/api.py"))
+parsing_router = import_router(os.path.abspath("_1_parsing/api.py"))
+image_router = import_router(os.path.abspath("_2_image/api.py"))
+
+
+
+# parsing_app = import_api(os.path.abspath("_1_parsing/api.py"))
+# image_app = import_api(os.path.abspath("_2_image/api.py"))
+# chunking_app = import_api(os.path.abspath("_3_chunking/api.py"))
+# embedding_app = import_api(os.path.abspath("_4_embedding_store/api.py"))
+# llm_app = import_api(os.path.abspath("_5_retrieval_llm/api.py"))
 
 app = FastAPI(title="Pipeline API")
 
@@ -32,11 +37,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/upload", parsing_app)
-app.mount("/img", image_app)
-app.mount("/markdown", chunking_app)
-app.mount("/store", embedding_app)
-app.mount("/llm", llm_app)
+app.include_router(parsing_router, prefix="/upload")
+app.include_router(image_router, prefix="/img")
+
+
+
+# app.mount("/upload", parsing_app)
+# app.mount("/img", image_app)
+# app.mount("/markdown", chunking_app)
+# app.mount("/store", embedding_app)
+# app.mount("/llm", llm_app)
 
 
 @app.get("/")
