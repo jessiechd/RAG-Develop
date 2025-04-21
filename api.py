@@ -32,10 +32,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/parsing", parsing_app)
-app.mount("/image_description", image_app)
-app.mount("/chunking", chunking_app)
-app.mount("/embedding", embedding_app)
+app.mount("/upload", parsing_app)
+app.mount("/img", image_app)
+app.mount("/markdown", chunking_app)
+app.mount("/store", embedding_app)
 app.mount("/llm", llm_app)
 
 
