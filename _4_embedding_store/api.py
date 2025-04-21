@@ -12,13 +12,13 @@ from _4_embedding_store.main import store_chunks_in_supabase
 
 router = APIRouter()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_FOLDER = BASE_DIR / "input_json"
