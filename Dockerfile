@@ -13,6 +13,9 @@ COPY requirements.txt /app/
 # Install dependencies from requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install EasyOCR
+RUN pip install --no-cache-dir easyocr
+
 # Copy all application files into the container
 COPY . /app/
 
