@@ -5,12 +5,21 @@ from pydantic import BaseModel
 import uvicorn
 import sys
 import os
+from fastapi.middleware.cors import CORSMiddleware
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from _5_retrieval_llm.main import query_supabase, call_openai_llm
 
 llm_app = FastAPI(title="Retrieval and LLM API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class QueryRequest(BaseModel):
     user_query: str

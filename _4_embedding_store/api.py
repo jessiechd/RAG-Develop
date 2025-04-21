@@ -4,12 +4,21 @@ import os
 import uvicorn
 import sys
 from pathlib import Path
+from fastapi.middleware.cors import CORSMiddleware
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from _4_embedding_store.main import store_chunks_in_supabase
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_FOLDER = BASE_DIR / "input_json"
