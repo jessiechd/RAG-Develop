@@ -32,15 +32,12 @@ DB_CONNECTION = os.getenv("DB_CONNECTION")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai.api_key = OPENAI_API_KEY
 
-# Initialize Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Set up vector store client
 vx = vecs.create_client(DB_CONNECTION)
 vec_text = vx.get_or_create_collection(name="vec_text", dimension=768)
 vec_table = vx.get_or_create_collection(name="vec_table", dimension=768)
 
-# Load Embedding Model
 tokenizer = AutoTokenizer.from_pretrained("Alibaba-NLP/gte-multilingual-base", trust_remote_code=True)
 model = AutoModel.from_pretrained("Alibaba-NLP/gte-multilingual-base", trust_remote_code=True).to(
     torch.device("cuda" if torch.cuda.is_available() else "cpu"))
@@ -52,23 +49,23 @@ def get_embedding(text):
         outputs = model(**inputs)
     return outputs.last_hidden_state.mean(dim=1).squeeze().cpu().tolist()
 
-def query_supabase(user_query):
-    """Retrieves both text and table chunks based on query, ensuring relevance balance."""
+def query_supabase(user_query, user_id, session_id):
+    """Retrieves both text and table chunks based on query, ensuring relevance balance and filtering by user_id and session_id."""
     query_embedding = get_embedding(user_query)
     embedding_str = ','.join([str(x) for x in query_embedding])
 
-    # Connect and register pgvector
     conn = psycopg2.connect(DB_CONNECTION)
     register_vector(conn)
     cur = conn.cursor()
 
-    # Retrieve text chunks
     cur.execute(f"""
         SELECT id, 1 - (vec <=> ARRAY[{embedding_str}]::vector) AS similarity
         FROM vecs.vec_text
+        WHERE metadata->>'user_id' = %s AND metadata->>'session_id' = %s
         ORDER BY vec <=> ARRAY[{embedding_str}]::vector
         LIMIT 5
-    """)
+    """, (user_id, session_id))
+
     text_chunk_ids = cur.fetchall()
     text_results = []
 
@@ -76,9 +73,9 @@ def query_supabase(user_query):
         chunk_id_list = tuple([str(row[0]) for row in text_chunk_ids])
         cur.execute(f"""
             SELECT chunk_id, content, metadata
-            FROM public.documents
-            WHERE chunk_id IN %s;
-        """, (chunk_id_list,))
+            FROM public.documents_chunk
+            WHERE chunk_id IN %s AND metadata->>'user_id' = %s AND metadata->>'session_id' = %s;
+        """, (chunk_id_list, user_id, session_id))
         text_chunks = {row[0]: row[1:] for row in cur.fetchall()}
         text_results = [(cid, "text", text_chunks[cid][0], sim)
                         for cid, sim in text_chunk_ids if cid in text_chunks]
@@ -87,9 +84,11 @@ def query_supabase(user_query):
     cur.execute(f"""
         SELECT id, 1 - (vec <=> ARRAY[{embedding_str}]::vector) AS similarity
         FROM vecs.vec_table
+        WHERE metadata->>'user_id' = %s AND metadata->>'session_id' = %s
         ORDER BY vec <=> ARRAY[{embedding_str}]::vector
         LIMIT 5
-    """)
+    """, (user_id, session_id))
+
     table_chunk_ids = cur.fetchall()
     table_results = []
 
@@ -97,9 +96,9 @@ def query_supabase(user_query):
         chunk_id_list = tuple([str(row[0]) for row in table_chunk_ids])
         cur.execute(f"""
             SELECT chunk_id, description, metadata
-            FROM public.tables
-            WHERE chunk_id IN %s;
-        """, (chunk_id_list,))
+            FROM public.tables_chunk
+            WHERE chunk_id IN %s AND metadata->>'user_id' = %s AND metadata->>'session_id' = %s;
+        """, (chunk_id_list, user_id, session_id))
         table_chunks = {row[0]: row[1:] for row in cur.fetchall()}
         table_results = [(cid, "table", table_chunks[cid][0], sim)
                          for cid, sim in table_chunk_ids if cid in table_chunks]
@@ -149,13 +148,11 @@ def chat():
             print("Starting a new chat...\n")
             continue  
 
-        # Retrieve relevant chunks from Supabase based on user query
+
         retrieved_chunks = query_supabase(user_query)
 
-        # Get the answer and update the chat history with the user's query and assistant's response
         answer, chat_history = call_openai_llm(user_query, retrieved_chunks, chat_history)
         
-        # Print the assistant's response
         print(f"Assistant: {answer}\n")
 
 

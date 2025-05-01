@@ -2,6 +2,68 @@ import json
 import re
 import os
 import argparse
+from pathlib import Path
+from supabase import create_client, Client
+from dotenv import load_dotenv
+import logging
+import shutil
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+env_path = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(dotenv_path=env_path)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET")
+
+BASE_DIR = Path(__file__).resolve().parent
+TEMP_DIR = BASE_DIR / "temp"
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+INPUT_DIR = TEMP_DIR / "img"
+OUTPUT_DIR = TEMP_DIR / "chunking"
+
+os.makedirs(INPUT_DIR, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+def download_file_from_supabase(file_name: str, current_user: str, session_id: str) -> Path:
+    """Download file from Supabase Storage and save locally."""
+    try:
+        supabase_path = f"user_{current_user}/{session_id}/img/{file_name}"
+        file_bytes = supabase.storage.from_(SUPABASE_BUCKET).download(supabase_path)
+        
+        if not file_bytes:
+            logger.error(f"Failed to download {file_name} from Supabase: Empty response")
+            return None
+
+        local_download_path = INPUT_DIR / file_name
+        os.makedirs(local_download_path.parent, exist_ok=True)
+
+        with open(local_download_path, "wb") as temp_file:
+            temp_file.write(file_bytes)
+        
+        logger.info(f"File downloaded to {local_download_path}")
+        return local_download_path
+
+    except Exception as e:
+        logger.error(f"Error downloading {file_name} from Supabase: {e}")
+        return None
+
+def list_markdown_files_from_supabase(user_id: str, session_id: str):
+    folder_path = f"user_{user_id}/{session_id}/img"
+    try:
+        res = supabase.storage.from_(SUPABASE_BUCKET).list(path=folder_path)
+
+        if not res:
+            raise Exception("No response from Supabase")
+
+        return [item["name"] for item in res if item["name"].endswith(".md")]
+
+    except Exception as e:
+        raise Exception(f"Failed to list files from Supabase: {str(e)}")
+
 
 def load_markdown(file_path):
     with open(file_path, "r", encoding="utf-8") as file:
@@ -49,9 +111,43 @@ def split_text(text, section_title, max_words=400, overlap=40):
         start += max_words - overlap
     return chunks
 
-def process_markdown(file_path, output_file):
+
+def upload_file_to_supabase(file_name: str, local_path: Path, current_user: str, session_id: str):
+    """Upload updated file back to Supabase Storage."""
+    try:
+        if isinstance(local_path, str):
+            local_path = Path(local_path)
+
+        supabase_path = f"user_{current_user}/{session_id}/chunking/{file_name}" 
+        logger.debug(f"Uploading {file_name} to Supabase at {supabase_path}")
+
+        with open(local_path, "rb") as f:
+            data = f.read()
+
+        content_type = (
+            "text/markdown" if local_path.suffix == ".md"
+            else "application/json" if local_path.suffix == ".json"
+            else "image/jpeg"
+        )
+
+        response = supabase.storage.from_(SUPABASE_BUCKET).upload(supabase_path, data, {"content-type": content_type})
+
+        logger.debug(f"Supabase upload response: {response}")
+
+        return response
+
+    except Exception as e:
+        logger.error(f"Error uploading {file_name} to Supabase: {e}")
+        return None
+
+def process_markdown(file_name: str, user_id: str, session_id: str):
+    # Download file dari Supabase
+    file_path = download_file_from_supabase(file_name, user_id, session_id)
+    if not file_path:
+        raise Exception("File not found or download failed")
+
     markdown_text = load_markdown(file_path)
-    file_name = os.path.basename(file_path)
+    file_name_only = os.path.basename(file_path)
     sections = re.split(r'^(#+\s+.*)', markdown_text, flags=re.MULTILINE)
     final_chunks, current_section, chunk_id = [], "Unknown", 1
 
@@ -75,7 +171,13 @@ def process_markdown(file_path, output_file):
                     final_chunks.append({
                         "chunk_id": chunk_id,
                         "content": chunk,
-                        "metadata": {"source": file_name, "section": section_title, "position": chunk_id}
+                        "metadata": {
+                            "source": file_name_only,
+                            "section": section_title,
+                            "position": chunk_id,
+                            "user_id": user_id,
+                            "session_id": session_id
+                        }
                     })
                     chunk_id += 1
             
@@ -85,7 +187,14 @@ def process_markdown(file_path, output_file):
                     final_chunks.append({
                         "chunk_id": chunk_id,
                         "table": table_chunk,
-                        "metadata": {"source": file_name, "section": section_title, "table_title": table_title, "position": chunk_id}
+                        "metadata": {
+                            "source": file_name_only,
+                            "section": section_title,
+                            "table_title": table_title,
+                            "position": chunk_id,
+                            "user_id": user_id,
+                            "session_id": session_id
+                        }
                     })
                     chunk_id += 1
         
@@ -96,24 +205,56 @@ def process_markdown(file_path, output_file):
                 final_chunks.append({
                     "chunk_id": chunk_id,
                     "content": chunk,
-                    "metadata": {"source": file_name, "section": section_title, "position": chunk_id}
+                    "metadata": {
+                        "source": file_name_only,
+                        "section": section_title,
+                        "position": chunk_id,
+                        "user_id": user_id,
+                        "session_id": session_id
+                    }
                 })
                 chunk_id += 1
-    
+
+    output_file = OUTPUT_DIR / file_name_only.replace(".md", ".json")
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
     with open(output_file, "w", encoding="utf-8") as json_file:
         json.dump(final_chunks, json_file, indent=4, ensure_ascii=False)
     print(f"Chunking completed. JSON saved to: {output_file}")
 
+
+    upload_response = upload_file_to_supabase(output_file.name, output_file, user_id, session_id )
+
+    if upload_response and isinstance(upload_response, dict) and "Key" in upload_response:
+        file_path_in_storage = upload_response["Key"]
+        file_url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/{file_path_in_storage}"
+        logger.info(f"File successfully uploaded to Supabase: {file_url}")
+        return file_url
+
+    try:
+        shutil.rmtree(TEMP_DIR) 
+        print(f"Folder {TEMP_DIR} has been removed successfully.")
+    except Exception as e:
+        print(f"Error removing folder {TEMP_DIR}: {e}")
+    
+    return {"message": "Success"}
+
+
 if __name__ == "__main__":
 
-    BASE_DIR = Path(__file__).resolve().parent
+    # BASE_DIR = Path(__file__).resolve().parent
 
-    input_folder = BASE_DIR / "input_md"
-    output_folder = BASE_DIR.parent / "_4_embedding_store" / "input_json"
-    # os.makedirs(output_folder, exist_ok=True)
+    # input_folder = BASE_DIR / "input_md"
+    # output_folder_c = BASE_DIR.parent / "_4_embedding_store" / "input_json"
+    # # os.makedirs(output_folder, exist_ok=True)
     
-    for file_name in os.listdir(input_folder):
-        if file_name.endswith(".md"):
-            input_path = os.path.join(input_folder, file_name)
-            output_path = os.path.join(output_folder, file_name.replace(".md", ".json"))
-            process_markdown(input_path, output_path)
+    # for file_name in os.listdir(input_folder):
+    #     if file_name.endswith(".md"):
+    #         input_path = os.path.join(input_folder, file_name)
+    #         output_path = os.path.join(output_folder_c, file_name.replace(".md", ".json"))
+    
+    process_markdown(file_name, current_user, session_id)
+
+
+
+

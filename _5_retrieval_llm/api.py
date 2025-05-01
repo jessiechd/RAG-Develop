@@ -1,5 +1,5 @@
 import numpy as np
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 import uvicorn
@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from _5_retrieval_llm.main import query_supabase, call_openai_llm
+from auth.dependencies import get_current_user
 
 # llm_app = FastAPI(title="Retrieval and LLM API")
 
@@ -27,7 +28,6 @@ class QueryRequest(BaseModel):
     user_query: str
     chat_history: list = []
 
-# Convert anything that FastAPI can't serialize
 def sanitize(obj):
     if isinstance(obj, np.generic): 
         return obj.item()
@@ -39,24 +39,39 @@ def sanitize(obj):
         return tuple(sanitize(i) for i in obj)
     return obj
 
+
 @router.get("/")
 def root():
     return {"message": "Document Retrieval and LLM API is running."}
 
-@router.post("/query")
-def query_documents(request: QueryRequest):
+@router.post("/session/{session_id}/query")
+def query_documents(
+    session_id: str,
+    request: QueryRequest,
+    current_user: dict = Depends(get_current_user)
+):
+
+    user_id = current_user
+
     try:
-        retrieved_chunks = query_supabase(request.user_query)
+        retrieved_chunks = query_supabase(request.user_query, current_user, session_id)
         sanitized_chunks = sanitize(retrieved_chunks)
         return {"retrieved_chunks": sanitized_chunks}
     except Exception as e:
         print("Error in /query:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/chat")
-def chat_with_llm(request: QueryRequest):
+@router.post("/session/{session_id}/chat")
+def chat_with_llm(
+    session_id: str,
+    request: QueryRequest,
+    current_user: dict = Depends(get_current_user)
+):
+
+    user_id = current_user
+
     try:
-        retrieved_chunks = query_supabase(request.user_query)
+        retrieved_chunks = query_supabase(request.user_query, current_user, session_id)
         answer, chat_history = call_openai_llm(
             request.user_query, retrieved_chunks, request.chat_history
         )

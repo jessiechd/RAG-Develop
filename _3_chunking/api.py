@@ -1,44 +1,68 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 import os
 import json
 import sys
 from pathlib import Path
-from fastapi.middleware.cors import CORSMiddleware
+import logging
+from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from _3_chunking.main import process_markdown
+from _3_chunking.main import process_markdown, list_markdown_files_from_supabase
+from auth.dependencies import get_current_user 
+from supabase import create_client, Client
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-
+env_path = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(dotenv_path=env_path)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET")
 
 BASE_DIR = Path(__file__).resolve().parent
+TEMP_DIR = BASE_DIR / "temp"
+os.makedirs(TEMP_DIR, exist_ok=True)
 
-INPUT_FOLDER = BASE_DIR / "input_md"
-OUTPUT_FOLDER = BASE_DIR.parent / "_4_embedding_store" / "input_json"
+INPUT_DIR = TEMP_DIR / "img"
+OUTPUT_DIR = TEMP_DIR / "chunking"
 
-# os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+os.makedirs(INPUT_DIR, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-@router.get("/chunking")
-def process_markdown_files():
-    """Process all markdown files in input_md and return success message."""
-    for file_name in os.listdir(INPUT_FOLDER):
-        if file_name.endswith(".md"):
-            input_path = os.path.join(INPUT_FOLDER, file_name)
-            output_path = os.path.join(OUTPUT_FOLDER, file_name.replace(".md", ".json"))
-            process_markdown(input_path, output_path)
 
-    
-    return {"message": "Processing completed. JSON files saved in output_json"}
+
+@router.get("/session/{session_id}/chunking")
+def process_all_markdown_files(
+    session_id: str,
+    current_user: str = Depends(get_current_user)  
+):
+    """
+    Endpoint untuk memproses file markdown dari Supabase dan mengunggah hasilnya ke Supabase.
+    """
+    user_id = current_user
+    try:
+        files = list_markdown_files_from_supabase(user_id, session_id)
+        if not files:
+            raise HTTPException(status_code=404, detail="No markdown files found in Supabase.")
+
+        results = []
+        for file_name in files:
+            url = process_markdown(file_name, user_id, session_id)
+            results.append({
+                "file_name": file_name,
+                "json_url": url
+            })
+
+        return {"message": "All files processed.", "results": results}
+
+    except Exception as e:
+        logger.error(f"Chunking failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/")
 def home():
