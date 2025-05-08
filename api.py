@@ -73,10 +73,10 @@ app.include_router(auth_router, prefix="/auth", tags=["auth"])
 
 app.include_router(pipeline_router, prefix="/pipeline", tags=["pipeline"])
 
-app.include_router(parsing_router, prefix="/upload")
-app.include_router(image_router, prefix="/img")
-app.include_router(chunking_router, prefix="/markdown")
-app.include_router(embedding_router, prefix="/store")
+# app.include_router(parsing_router, prefix="/upload")
+# app.include_router(image_router, prefix="/img")
+# app.include_router(chunking_router, prefix="/markdown")
+# app.include_router(embedding_router, prefix="/store")
 app.include_router(llm_router, prefix="/llm")
 
 
