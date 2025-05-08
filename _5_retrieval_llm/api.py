@@ -89,11 +89,11 @@ def query_documents(
     request: QueryRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    user_id = current_user
-    user_uuid = get_user_uuid_by_email(user_id) 
+    email = current_user["email"]
+    user_uuid = get_user_uuid_by_email(email)
 
     try:
-        retrieved_chunks = query_supabase(request.user_query, current_user, session_id)
+        retrieved_chunks = query_supabase(request.user_query, user_uuid, session_id)
         sanitized_chunks = sanitize(retrieved_chunks)
         return {"retrieved_chunks": sanitized_chunks}
     except Exception as e:
@@ -107,11 +107,11 @@ def chat_with_llm(
     current_user: dict = Depends(get_current_user)
 ):
 
-    user_id = current_user
-    user_uuid = get_user_uuid_by_email(user_id)
+    email = current_user["email"]
+    user_uuid = get_user_uuid_by_email(email)
 
     try:
-        retrieved_chunks = query_supabase(request.user_query, current_user, session_id)
+        retrieved_chunks = query_supabase(request.user_query, user_uuid, session_id)
         answer, chat_history = call_openai_llm(
             request.user_query, retrieved_chunks, request.chat_history
         )
@@ -130,7 +130,7 @@ def get_chat_history(
 ):
 
     user_id = current_user
-    user_uuid = get_user_uuid_by_email(user_id)
+    user_uuid = get_user_uuid_by_email(current_user["email"])
 
     try:
 
