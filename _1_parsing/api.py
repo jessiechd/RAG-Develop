@@ -13,7 +13,7 @@ from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from _1_parsing.main import convert_and_save, extract_nodes, download_file_from_supabase
+from _1_parsing.main import convert_and_save, extract_nodes, download_file_from_supabase_parsing
 from auth.dependencies import get_current_user  
 
 
@@ -85,7 +85,9 @@ async def upload_file_to_session(
         logger.error(f"Error uploading file to Supabase: {e}")
         return {"message": "Failed to upload file to Supabase Storage."}
 
-    downloaded_file = download_file_from_supabase(file_path, current_user=user_id, session_id=session_id)
+    file_name = file.filename
+    file_path = file_name
+    downloaded_file = download_file_from_supabase_parsing(file_path, current_user=user_id, session_id=session_id)
     if not downloaded_file:
         return {"message": "File download failed."}
 

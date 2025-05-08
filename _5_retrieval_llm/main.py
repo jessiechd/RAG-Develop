@@ -30,6 +30,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DB_CONNECTION = os.getenv("DB_CONNECTION")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET")
 openai.api_key = OPENAI_API_KEY
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)

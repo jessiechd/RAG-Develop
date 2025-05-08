@@ -74,28 +74,33 @@ def initialize_converter():
     format_options = {fmt: create_pipeline_options(fmt) for fmt in allowed_formats if create_pipeline_options(fmt)}
     return DocumentConverter(allowed_formats=allowed_formats, format_options=format_options)
 
-def download_file_from_supabase(file_name: str, current_user: str, session_id: str) -> Path:
+def download_file_from_supabase_parsing(file_path: str, current_user: str, session_id: str) -> Path | None:
     """Download file from Supabase Storage and save locally."""
     try:
-        supabase_path = f"user_{current_user}/{session_id}/input_pdfs/{file_name}"
+        # Full path sudah diberikan di file_path (misalnya: chunking/xxx.json)
+        supabase_path = f"user_{current_user}/{session_id}/{file_path}"
         file_bytes = supabase.storage.from_(SUPABASE_BUCKET).download(supabase_path)
         
         if not file_bytes:
-            logger.error(f"Failed to download {file_name} from Supabase: Empty response")
+            logger.error(f"Failed to download {file_path} from Supabase: Empty response")
             return None
 
-        local_download_path = INPUT_DIR / file_name
-        os.makedirs(local_download_path.parent, exist_ok=True)
+            
+        file_name = Path(file_path).name
+        local_path = INPUT_DIR / file_name
+        local_path = INPUT_DIR / file_name
+        os.makedirs(local_path.parent, exist_ok=True)
 
-        with open(local_download_path, "wb") as temp_file:
-            temp_file.write(file_bytes)
+        with open(local_path, "wb") as f:
+            f.write(file_bytes)
         
-        logger.info(f"File downloaded to {local_download_path}")
-        return local_download_path
+        logger.info(f"File downloaded to {local_path}")
+        return local_path
 
     except Exception as e:
-        logger.error(f"Error downloading {file_name} from Supabase: {e}")
+        logger.error(f"Error downloading {file_path} from Supabase: {e}")
         return None
+
 def upload_file_to_supabase(file_path: Path, dest_file_name: str, user_id: str, session_id: str) -> str:
     try:
         with open(file_path, "rb") as f:

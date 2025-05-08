@@ -9,7 +9,7 @@ env_path = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(dotenv_path=env_path)
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 120
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -29,6 +29,8 @@ def create_access_token(data: dict, expires_delta: timedelta = timedelta(minutes
 def verify_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload.get("sub") 
+        email = payload.get("sub")
+        role = payload.get("role")
+        return {"email": email, "role": role}
     except JWTError:
         return None

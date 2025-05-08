@@ -23,6 +23,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     password_hash = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+    role = Column(String, default="user")
 
     def __init__(self, email, password_hash):
         self.id = str(uuid4())
