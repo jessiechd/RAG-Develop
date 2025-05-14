@@ -14,10 +14,12 @@ import shutil
 import uuid
 from pathlib import Path
 from datetime import datetime
+from typing import List, Optional
+
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from _5_retrieval_llm.main import query_supabase, call_openai_llm
+from _5_retrieval_llm.main import query_supabase, call_openai_llm, get_accessible_session_ids
 from auth.dependencies import get_current_user
 
 # llm_app = FastAPI(title="Retrieval and LLM API")
@@ -60,12 +62,47 @@ def save_chat_message(user_id, session_id, role, message):
         "session_id": session_id,
         "role": role,
         "message": message,
-        "timestamp": datetime.utcnow().isoformat()  # Convert to string
+        "timestamp": datetime.utcnow().isoformat()  
     }).execute()
+
+def validate_user_access_to_session(user_uuid: str, session_id: str) -> None:
+    session = supabase.table("sessions").select("*").eq("id", session_id).single().execute().data
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    is_owner = session["created_by"] == user_uuid
+    is_public = session.get("is_public", False)
+    allowed_roles = session.get("allowed_roles", [])
+    user_role_resp = supabase.table("users").select("user_role").eq("id", user_uuid).single().execute()
+    user_role = user_role_resp.data["user_role"] if user_role_resp.data else None
+
+    if not (is_owner or is_public or user_role in allowed_roles):
+        raise HTTPException(status_code=403, detail="You do not have access to this session's chat history")
+
+
+def get_user_role_by_id(user_id: str) -> str:
+    user = supabase.table("users").select("user_role").eq("id", user_id).single().execute()
+    return user.data["user_role"] if user.data else None
+
+def is_valid_uuid(value):
+    try:
+        uuid.UUID(str(value))
+        return True
+    except ValueError:
+        return False
+
+def are_valid_uuids(session_ids):
+    try:
+        return all(uuid.UUID(sid) for sid in session_ids)
+    except:
+        return False
+
+
 
 class QueryRequest(BaseModel):
     user_query: str
     chat_history: list = []
+    session_ids: Optional[List[str]] = None 
+
 
 def sanitize(obj):
     if isinstance(obj, np.generic): 
@@ -83,9 +120,8 @@ def sanitize(obj):
 def root():
     return {"message": "Document Retrieval and LLM API is running."}
 
-@router.post("/session/{session_id}/query")
+@router.post("/query")
 def query_documents(
-    session_id: str,
     request: QueryRequest,
     current_user: dict = Depends(get_current_user)
 ):
@@ -93,47 +129,58 @@ def query_documents(
     user_uuid = get_user_uuid_by_email(email)
 
     try:
-        retrieved_chunks = query_supabase(request.user_query, user_uuid, session_id)
+        session_ids = request.session_ids or get_accessible_session_ids(supabase, user_uuid)
+
+        retrieved_chunks = query_supabase(request.user_query, user_uuid, session_ids)
         sanitized_chunks = sanitize(retrieved_chunks)
+
         return {"retrieved_chunks": sanitized_chunks}
+
     except Exception as e:
         print("Error in /query:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/session/{session_id}/chat")
+@router.post("/chat")
 def chat_with_llm(
-    session_id: str,
     request: QueryRequest,
     current_user: dict = Depends(get_current_user)
 ):
-
     email = current_user["email"]
     user_uuid = get_user_uuid_by_email(email)
 
     try:
-        retrieved_chunks = query_supabase(request.user_query, user_uuid, session_id)
+        session_ids = request.session_ids or get_accessible_session_ids(supabase, user_uuid)
+
+        retrieved_chunks = query_supabase(request.user_query, user_uuid, session_ids)
+
         answer, chat_history = call_openai_llm(
             request.user_query, retrieved_chunks, request.chat_history
         )
 
-        save_chat_message(user_uuid, session_id, "user", request.user_query)
-        save_chat_message(user_uuid, session_id, "assistant", answer)
+        if session_ids and len(session_ids) == 1 and is_valid_uuid(session_ids[0]):
+            save_chat_message(user_uuid, session_ids[0], "user", request.user_query)
+            save_chat_message(user_uuid, session_ids[0], "assistant", answer)
 
-        return {"answer": answer, "chat_history": chat_history}
+        return {
+            "answer": answer,
+            "chat_history": chat_history
+        }
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print("Error in /chat:", str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get("/session/{session_id}/history")
 def get_chat_history(
     session_id: str,
     current_user: dict = Depends(get_current_user)
 ):
-
-    user_id = current_user
     user_uuid = get_user_uuid_by_email(current_user["email"])
 
-    try:
+    validate_user_access_to_session(user_uuid, session_id)
 
+    try:
         response = supabase.table("chat_history") \
             .select("role, message, timestamp") \
             .eq("user_id", user_uuid) \
@@ -141,11 +188,10 @@ def get_chat_history(
             .order("timestamp", desc=False) \
             .execute()
 
-        history = response.data
-        return {"chat_history": history}
+        return {"chat_history": response.data}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Error fetching chat history: {str(e)}")
 
 
 # if __name__ == "__main__":

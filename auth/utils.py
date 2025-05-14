@@ -29,8 +29,9 @@ def create_access_token(data: dict, expires_delta: timedelta = timedelta(minutes
 def verify_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
-        role = payload.get("role")
-        return {"email": email, "role": role}
+        email = payload.get("sub") 
+        is_admin = payload.get("is_admin")  
+        user_role = payload.get("user_role")  
+        return {"email": email, "is_admin": is_admin, "user_role": user_role}
     except JWTError:
         return None

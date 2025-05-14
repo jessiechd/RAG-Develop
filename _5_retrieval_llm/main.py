@@ -18,6 +18,8 @@ import nltk
 import psycopg2
 from pgvector.psycopg2 import register_vector
 from pathlib import Path
+from typing import List, Optional
+
 
 
 nltk.download('all')
@@ -50,8 +52,44 @@ def get_embedding(text):
         outputs = model(**inputs)
     return outputs.last_hidden_state.mean(dim=1).squeeze().cpu().tolist()
 
-def query_supabase(user_query, user_id, session_id):
-    """Retrieves both text and table chunks based on query, ensuring relevance balance and filtering by user_id and session_id."""
+def get_accessible_session_ids(supabase: Client, user_id: str):
+    """Mengambil ID session yang dapat diakses oleh user berdasarkan role dan aturan session."""
+
+    user_data = (
+        supabase.table("users")
+        .select("user_role, is_admin")
+        .eq("id", user_id)
+        .single()
+        .execute()
+    )
+
+    if user_data.data is None:
+        return []
+
+    user_role = user_data.data["user_role"]
+    is_admin = user_data.data["is_admin"]
+
+    if is_admin:
+        sessions = supabase.table("sessions").select("id").execute()
+        return [s["id"] for s in sessions.data]
+
+    sessions = supabase.table("sessions").select("id, is_public, allowed_roles, created_by").execute()
+    accessible_ids = []
+
+    for session in sessions.data:
+        allowed_roles = session.get("allowed_roles", [])
+        if isinstance(allowed_roles, str):
+            allowed_roles = allowed_roles.split(",") 
+        if (
+            session["is_public"]
+            or session["created_by"] == user_id
+            or user_role in allowed_roles
+        ):
+            accessible_ids.append(session["id"])
+
+    return accessible_ids
+
+def query_supabase(user_query, user_id, session_ids=None):
     query_embedding = get_embedding(user_query)
     embedding_str = ','.join([str(x) for x in query_embedding])
 
@@ -59,56 +97,65 @@ def query_supabase(user_query, user_id, session_id):
     register_vector(conn)
     cur = conn.cursor()
 
-    cur.execute(f"""
+    TOP_K = 20
+
+    query_text = f"""
         SELECT id, 1 - (vec <=> ARRAY[{embedding_str}]::vector) AS similarity
         FROM vecs.vec_text
-        WHERE metadata->>'user_id' = %s AND metadata->>'session_id' = %s
         ORDER BY vec <=> ARRAY[{embedding_str}]::vector
-        LIMIT 5
-    """, (user_id, session_id))
-
+        LIMIT {TOP_K}
+    """
+    cur.execute(query_text)
     text_chunk_ids = cur.fetchall()
-    text_results = []
 
+    text_results = []
     if text_chunk_ids:
         chunk_id_list = tuple([str(row[0]) for row in text_chunk_ids])
         cur.execute(f"""
-            SELECT chunk_id, content, metadata
+            SELECT chunk_id, content, metadata, session_id
             FROM public.documents_chunk
-            WHERE chunk_id IN %s AND metadata->>'user_id' = %s AND metadata->>'session_id' = %s;
-        """, (chunk_id_list, user_id, session_id))
+            WHERE chunk_id IN %s;
+        """, (chunk_id_list,))
         text_chunks = {row[0]: row[1:] for row in cur.fetchall()}
-        text_results = [(cid, "text", text_chunks[cid][0], sim)
-                        for cid, sim in text_chunk_ids if cid in text_chunks]
-        text_results.sort(key=lambda x: x[3], reverse=True)
 
-    cur.execute(f"""
+        for cid, sim in text_chunk_ids:
+            if cid in text_chunks:
+                chunk = text_chunks[cid]
+                session_id = chunk[2]  
+                if not session_ids or session_id in session_ids:
+                    text_results.append((cid, "text", chunk[0], sim)) 
+
+    query_table = f"""
         SELECT id, 1 - (vec <=> ARRAY[{embedding_str}]::vector) AS similarity
         FROM vecs.vec_table
-        WHERE metadata->>'user_id' = %s AND metadata->>'session_id' = %s
         ORDER BY vec <=> ARRAY[{embedding_str}]::vector
-        LIMIT 5
-    """, (user_id, session_id))
-
+        LIMIT {TOP_K}
+    """
+    cur.execute(query_table)
     table_chunk_ids = cur.fetchall()
-    table_results = []
 
+    table_results = []
     if table_chunk_ids:
         chunk_id_list = tuple([str(row[0]) for row in table_chunk_ids])
         cur.execute(f"""
-            SELECT chunk_id, description, metadata
+            SELECT chunk_id, description, metadata, session_id
             FROM public.tables_chunk
-            WHERE chunk_id IN %s AND metadata->>'user_id' = %s AND metadata->>'session_id' = %s;
-        """, (chunk_id_list, user_id, session_id))
+            WHERE chunk_id IN %s;
+        """, (chunk_id_list,))
         table_chunks = {row[0]: row[1:] for row in cur.fetchall()}
-        table_results = [(cid, "table", table_chunks[cid][0], sim)
-                         for cid, sim in table_chunk_ids if cid in table_chunks]
-        table_results.sort(key=lambda x: x[3], reverse=True)
+
+        for cid, sim in table_chunk_ids:
+            if cid in table_chunks:
+                chunk = table_chunks[cid]
+                session_id = chunk[2] 
+                if not session_ids or session_id in session_ids:
+                    table_results.append((cid, "table", chunk[0], sim)) 
 
     conn.close()
 
-    combined_results = text_results[:3] + table_results[:3]
+    combined_results = text_results + table_results
     combined_results.sort(key=lambda x: x[3], reverse=True)
+
     return combined_results[:5]
 
 def call_openai_llm(user_query, retrieved_chunks, chat_history=[]):
