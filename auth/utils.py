@@ -4,12 +4,14 @@ from jose import JWTError, jwt
 from dotenv import load_dotenv
 import os
 from pathlib import Path
+import secrets
 
 env_path = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(dotenv_path=env_path)
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
-ACCESS_TOKEN_EXPIRE_MINUTES = 120
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+REFRESH_TOKEN_EXPIRE_DAYS = 3
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -35,3 +37,9 @@ def verify_token(token: str):
         return {"email": email, "is_admin": is_admin, "user_role": user_role}
     except JWTError:
         return None
+
+def create_refresh_token():
+    return secrets.token_urlsafe(32)
+
+def get_refresh_token_expiry():
+    return datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)

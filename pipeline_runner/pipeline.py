@@ -10,6 +10,7 @@ from _2_image.main import process_markdown_files
 from _3_chunking.main import process_markdown, list_markdown_files_from_supabase
 from _4_embedding_store.main import store_chunks_in_supabase, list_chunked_json_files_from_supabase, download_file_from_supabase
 from auth.dependencies import get_current_user
+from auth.models import User
 import logging
 from dotenv import load_dotenv
 from supabase import Client, create_client
@@ -17,6 +18,8 @@ from pydantic import BaseModel
 from datetime import datetime
 from collections import defaultdict
 from fastapi import Body
+from sqlalchemy.orm import Session
+from database import get_db
 
 
 logging.basicConfig(level=logging.INFO)
@@ -213,6 +216,30 @@ class SessionCreate(BaseModel):
 #         raise HTTPException(status_code=404, detail="No sessions found.")
 
 #     return all_sessions
+
+@router.get("/admin/users")
+def get_all_users(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    users = db.query(User).all()
+    
+    result = []
+    for user in users:
+        result.append({
+            "id": str(user.id),
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "role": user.user_role,
+            "is_admin": user.is_admin,
+            "created_at": user.created_at
+        })
+
+    return result
 
 @router.post("/admin/set-role")
 def set_user_role(
