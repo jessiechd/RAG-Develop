@@ -77,6 +77,7 @@ async def login_user(user: UserLogin, db: Session = Depends(get_db)):
     )
     db.add(refresh_token)
     db.commit()
+    
 
     return {
         "access_token": access_token,

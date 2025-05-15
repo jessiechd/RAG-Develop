@@ -227,6 +227,7 @@ def get_all_users(
 
     users = db.query(User).all()
     
+    
     result = []
     for user in users:
         result.append({

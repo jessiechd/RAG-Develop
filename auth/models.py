@@ -38,6 +38,7 @@ class User(Base):
         self.first_name = first_name
         self.last_name = last_name
 
+
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 

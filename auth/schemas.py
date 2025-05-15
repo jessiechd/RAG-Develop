@@ -11,6 +11,7 @@ class UserCreate(BaseModel):
     user_role: Optional[str] = 'user'   
 
 
+
 class UserLogin(BaseModel):
     email: str
     password: str
