@@ -287,6 +287,8 @@ def get_accessible_sessions(current_user: dict = Depends(get_current_user)):
         is_public = session.get("is_public", False)
         allowed_roles = session.get("allowed_roles", [])
         created_by = session.get("created_by")
+        is_global = session.get("is_global_context", False)
+        context_session_ids = session.get("context_session_ids")
 
         if user_role == "admin":
             accessible_sessions.append(session)
@@ -297,6 +299,14 @@ def get_accessible_sessions(current_user: dict = Depends(get_current_user)):
 
         elif user_role == "user":
             if is_public or created_by == user_id:
+                accessible_sessions.append(session)
+        
+        if context_session_ids and created_by == user_id:
+            if session not in accessible_sessions:
+                accessible_sessions.append(session)
+
+        if is_global and created_by == user_id:
+            if session not in accessible_sessions:
                 accessible_sessions.append(session)
 
     return accessible_sessions

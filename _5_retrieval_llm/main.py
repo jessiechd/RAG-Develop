@@ -71,9 +71,14 @@ def get_accessible_session_ids(supabase: Client, user_id: str):
 
     if is_admin:
         sessions = supabase.table("sessions").select("id").execute()
+        if sessions.data is None:
+            return []
         return [s["id"] for s in sessions.data]
 
     sessions = supabase.table("sessions").select("id, is_public, allowed_roles, created_by").execute()
+    if sessions.data is None:
+        return []
+    
     accessible_ids = []
 
     for session in sessions.data:

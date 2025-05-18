@@ -64,6 +64,7 @@ async def login_user(user: UserLogin, db: Session = Depends(get_db)):
     
     access_token = create_access_token(data={
         "sub": db_user.email,
+        "name": db_user.first_name,
         "is_admin": db_user.is_admin,
         "user_role": db_user.user_role
     })
@@ -107,6 +108,7 @@ async def refresh_access_token(request: TokenRefreshRequest, db: Session = Depen
 
     access_token = create_access_token(data={
         "sub": str(user.email),
+        "name": db_user.first_name,
         "is_admin": user.is_admin,
         "user_role": user.user_role
     })

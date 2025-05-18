@@ -15,6 +15,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
+from uuid import uuid4
 
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -83,6 +84,105 @@ def get_user_role_by_id(user_id: str) -> str:
     user = supabase.table("users").select("user_role").eq("id", user_id).single().execute()
     return user.data["user_role"] if user.data else None
 
+def generate_session_name(context_session_ids, is_global_context):
+    today_str = datetime.now().strftime("%d %b %Y %H:%M:%S")
+
+    if is_global_context:
+        return f"Global Context ({today_str})"
+
+    elif context_session_ids:
+        if len(context_session_ids) == 1:
+            folder = supabase.table("sessions")\
+                .select("session_name")\
+                .eq("id", context_session_ids[0])\
+                .limit(1)\
+                .execute()
+            folder_name = folder.data[0]["session_name"] if folder.data else "Unnamed"
+            return f"Based on: {folder_name} ({today_str})"
+
+        return f"Multi-Session ({today_str})"
+
+    return f"Multi-Session ({today_str})"
+
+def get_existing_virtual_context_session(user_id: str, context_session_ids: list[str]) -> Optional[str]:
+    """
+    Cek apakah sudah ada virtual context session dengan context_session_ids yang sama (urutan tidak masalah)
+    """
+    result = supabase.table("sessions")\
+        .select("id, context_session_ids")\
+        .eq("created_by", user_id)\
+        .eq("is_global_context", False)\
+        .execute()
+
+    if not result.data:
+        return None 
+
+    for row in result.data:
+        existing_ids = row.get("context_session_ids", [])
+        if existing_ids is None:
+            existing_ids = []
+        if set(existing_ids) == set(context_session_ids):
+            return row["id"]
+
+    return None
+
+def create_virtual_context_session(user_id: str, context_session_ids: list[str], force_new: bool = False) -> str:
+    if not force_new:
+        existing = get_existing_virtual_context_session(user_id, context_session_ids)
+        if existing:
+            return existing
+
+    session_id = str(uuid4())
+    now_str = datetime.utcnow().isoformat()
+    session_name = generate_session_name(context_session_ids, is_global_context=False)
+
+    supabase.table("sessions").insert({
+        "user_id": user_id,
+        "id": session_id,
+        "session_name": session_name,
+        "created_at": now_str,
+        "last_used": now_str,
+        "is_public": False,
+        "allowed_roles": [],
+        "created_by": user_id,
+        "is_global_context": False,
+        "context_session_ids": context_session_ids
+    }).execute()
+
+    return session_id
+
+def get_or_create_global_context_session(user_id: str, force_new: bool = False) -> str:
+    if not force_new:
+        existing = supabase.table("sessions").select("id")\
+            .eq("created_by", user_id)\
+            .eq("is_global_context", True)\
+            .order("created_at", desc=True)\
+            .limit(1)\
+            .execute()
+
+        if existing.data and len(existing.data) == 1:
+            return existing.data[0]["id"]
+
+    session_id = str(uuid4())
+    now_str = datetime.utcnow().isoformat()
+
+    session_name = generate_session_name([], is_global_context=True)
+
+
+    supabase.table("sessions").insert({
+        "user_id": user_id,  
+        "id": session_id,
+        "session_name": session_name,
+        "created_at": now_str,
+        "last_used": now_str,
+        "is_public": False,
+        "allowed_roles": [],
+        "created_by": user_id,
+        "is_global_context": True
+    }).execute()
+
+    return session_id
+
 def is_valid_uuid(value):
     try:
         uuid.UUID(str(value))
@@ -102,6 +202,8 @@ class QueryRequest(BaseModel):
     user_query: str
     chat_history: list = []
     session_ids: Optional[List[str]] = None 
+    force_new_global_session: Optional[bool] = False
+    force_new_virtual_session: Optional[bool] = False
 
 
 def sanitize(obj):
@@ -140,6 +242,36 @@ def query_documents(
         print("Error in /query:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
+# @router.post("/chat")
+# def chat_with_llm(
+#     request: QueryRequest,
+#     current_user: dict = Depends(get_current_user)
+# ):
+#     email = current_user["email"]
+#     user_uuid = get_user_uuid_by_email(email)
+
+#     try:
+#         session_ids = request.session_ids or get_accessible_session_ids(supabase, user_uuid)
+
+#         retrieved_chunks = query_supabase(request.user_query, user_uuid, session_ids)
+
+#         answer, chat_history = call_openai_llm(
+#             request.user_query, retrieved_chunks, request.chat_history
+#         )
+
+#         if session_ids and len(session_ids) == 1 and is_valid_uuid(session_ids[0]):
+#             save_chat_message(user_uuid, session_ids[0], "user", request.user_query)
+#             save_chat_message(user_uuid, session_ids[0], "assistant", answer)
+
+#         return {
+#             "answer": answer,
+#             "chat_history": chat_history
+#         }
+
+#     except Exception as e:
+#         print("Error in /chat:", str(e))
+#         raise HTTPException(status_code=500, detail="Internal server error")
+
 @router.post("/chat")
 def chat_with_llm(
     request: QueryRequest,
@@ -149,17 +281,25 @@ def chat_with_llm(
     user_uuid = get_user_uuid_by_email(email)
 
     try:
-        session_ids = request.session_ids or get_accessible_session_ids(supabase, user_uuid)
+        if request.session_ids is not None and len(request.session_ids) > 0:
+            context_session_ids = request.session_ids
+            force_new = request.force_new_virtual_session if request.force_new_virtual_session else False
+            save_session_id = create_virtual_context_session(user_uuid, context_session_ids, force_new)
 
-        retrieved_chunks = query_supabase(request.user_query, user_uuid, session_ids)
+        else:
+            context_session_ids = get_accessible_session_ids(supabase, user_uuid)
+            force_new = request.force_new_global_session if request.force_new_global_session else False
+            save_session_id = get_or_create_global_context_session(user_uuid, force_new)
 
-        answer, chat_history = call_openai_llm(
-            request.user_query, retrieved_chunks, request.chat_history
-        )
+        if not context_session_ids:
+            raise ValueError("context_session_ids is empty or None")
 
-        if session_ids and len(session_ids) == 1 and is_valid_uuid(session_ids[0]):
-            save_chat_message(user_uuid, session_ids[0], "user", request.user_query)
-            save_chat_message(user_uuid, session_ids[0], "assistant", answer)
+        retrieved_chunks = query_supabase(request.user_query, user_uuid, context_session_ids)
+
+        answer, chat_history = call_openai_llm(request.user_query, retrieved_chunks, request.chat_history)
+
+        save_chat_message(user_uuid, save_session_id, "user", request.user_query)
+        save_chat_message(user_uuid, save_session_id, "assistant", answer)
 
         return {
             "answer": answer,
@@ -169,7 +309,6 @@ def chat_with_llm(
     except Exception as e:
         print("Error in /chat:", str(e))
         raise HTTPException(status_code=500, detail="Internal server error")
-
 
 @router.get("/session/{session_id}/history")
 def get_chat_history(
