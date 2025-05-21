@@ -283,8 +283,28 @@ def chat_with_llm(
     try:
         if request.session_ids is not None and len(request.session_ids) > 0:
             context_session_ids = request.session_ids
-            force_new = request.force_new_virtual_session if request.force_new_virtual_session else False
-            save_session_id = create_virtual_context_session(user_uuid, context_session_ids, force_new)
+
+            # Cek apakah hanya satu session
+            if len(context_session_ids) == 1:
+                session_id = context_session_ids[0]
+
+                # Ambil data session-nya
+                session_resp = supabase.table("sessions").select("created_by, is_public")\
+                    .eq("id", session_id).single().execute()
+
+                session_data = session_resp.data if session_resp and session_resp.data else None
+
+                # Jika session milik user dan bukan publik, pakai langsung
+                if session_data and session_data["created_by"] == user_uuid and not session_data.get("is_public", False):
+                    save_session_id = session_id
+                else:
+                    # Jika session publik (bukan buatan user), buat virtual context session
+                    force_new = request.force_new_virtual_session if request.force_new_virtual_session else False
+                    save_session_id = create_virtual_context_session(user_uuid, context_session_ids, force_new)
+            else:
+                # Kalau lebih dari satu session, buat virtual context session
+                force_new = request.force_new_virtual_session if request.force_new_virtual_session else False
+                save_session_id = create_virtual_context_session(user_uuid, context_session_ids, force_new)
 
         else:
             context_session_ids = get_accessible_session_ids(supabase, user_uuid)
