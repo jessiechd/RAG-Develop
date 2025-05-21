@@ -397,7 +397,7 @@ def get_user_uploaded_files(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Unknown role")
 
     files_res = supabase.table("documents_track") \
-        .select("id, file_name, file_path, session_id, uploaded_at") \
+        .select("id, file_name, file_path, user_id, session_id, uploaded_at") \
         .in_("user_id", allowed_user_ids) \
         .execute()
 
@@ -422,6 +422,7 @@ def get_user_uploaded_files(current_user: dict = Depends(get_current_user)):
             "file_name": file["file_name"],
             "session_id": file.get("session_id"),
             "uploaded_at": file["uploaded_at"],
+            "user_id": file["user_id"], 
             "file_url": file_url,
         })
 
