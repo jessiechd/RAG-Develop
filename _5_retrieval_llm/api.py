@@ -288,9 +288,9 @@ def chat_with_llm(
                 session_id = context_session_ids[0]
 
                 session_resp = supabase.table("sessions").select("created_by, is_public")\
-                    .eq("id", session_id).single().execute()
+                    .eq("id", session_id).execute()
 
-                session_data = session_resp.data if session_resp and session_resp.data else None
+                session_data = session_resp.data[0] if session_resp.data else None
 
                 if session_data and session_data["created_by"] == user_uuid and not session_data.get("is_public", False):
                     save_session_id = session_id
