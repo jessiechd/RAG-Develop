@@ -7,6 +7,8 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 import logging
 import shutil
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -111,6 +113,44 @@ def split_text(text, section_title, max_words=400, overlap=40):
         start += max_words - overlap
     return chunks
 
+def clean_dot_leaders(text):
+    return re.sub(r'\.{2,}', '', text).strip()
+
+def is_table_of_contents(table_rows):
+    score = 0
+    for row in table_rows:
+        row_text = " ".join(row)
+        if re.search(r'\.{5,}', row_text) and re.search(r'[A-Za-z]', row_text):
+            score += 1
+    return score >= len(table_rows) * 0.6
+
+def structure_toc(table_rows, current_section):
+    toc = []
+    for row in table_rows:
+        if len(row) == 1:
+            title = clean_dot_leaders(row[0])
+            toc.append({
+                "number": None,
+                "title": title,
+                "section": current_section
+            })
+        elif len(row) >= 2:
+            number = clean_dot_leaders(row[0])
+            title = clean_dot_leaders(row[1])
+            toc.append({
+                "number": number,
+                "title": title,
+                "section": current_section
+            })
+    return toc
+
+def autofill_toc_numbers(toc_items):
+    counter = 1
+    for item in toc_items:
+        if not item.get("number") or item["number"] is None:
+            item["number"] = str(counter)
+            counter += 1
+    return toc_items
 
 def upload_file_to_supabase(file_name: str, local_path: Path, current_user: str, session_id: str):
     """Upload updated file back to Supabase Storage."""
@@ -140,6 +180,62 @@ def upload_file_to_supabase(file_name: str, local_path: Path, current_user: str,
         logger.error(f"Error uploading {file_name} to Supabase: {e}")
         return None
 
+def run_tiny_llama(prompt, max_new_tokens=256):
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    with torch.no_grad():
+        outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+def build_chunk_prompt(mini_chunks):
+    annotated = "\n".join([f"<CHUNK{i}> {text}" for i, text in enumerate(mini_chunks)])
+    instructions = (
+        "You are a smart text segmenter. Group the annotated mini-chunks into larger, semantically coherent chunks.\n"
+        "Each chunk should combine 2-4 mini-chunks that belong together in meaning.\n"
+        "Respond with groups using this format:\n\n"
+        "Chunk 1: <CHUNK0>, <CHUNK1>\n"
+        "Chunk 2: <CHUNK2>, <CHUNK3>, <CHUNK4>\n"
+    )
+    return f"{instructions}\n\n{annotated}"
+
+def agentic_chunk_text(text, section_title, max_chars=300):
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    mini_chunks, temp = [], ""
+    for sent in sentences:
+        if len(temp) + len(sent) < max_chars:
+            temp += " " + sent
+        else:
+            mini_chunks.append(temp.strip())
+            temp = sent
+    if temp:
+        mini_chunks.append(temp.strip())
+
+    if len(mini_chunks) <= 1:
+        return [text.strip()], ["Kept as one chunk"]
+
+    if len(mini_chunks) > 12:
+        mini_chunks = mini_chunks[:12]
+
+    prompt = build_chunk_prompt(mini_chunks)
+    raw_output = run_tiny_llama(prompt)
+
+    grouped_chunks = []
+    explanation = []
+    for line in raw_output.splitlines():
+        if line.startswith("Chunk"):
+            refs = re.findall(r"<CHUNK(\d+)>", line)
+            if refs:
+                valid_refs = [int(i) for i in refs if int(i) < len(mini_chunks)]
+                if not valid_refs:
+                    continue
+                group_text = " ".join([mini_chunks[i] for i in valid_refs])
+                cleaned_text = re.sub(r"\s+", " ", group_text.strip())
+                grouped_chunks.append(cleaned_text)
+                if len(valid_refs) > 1:
+                    explanation.append(f"Chunk {len(grouped_chunks)}: grouped {len(valid_refs)} mini-chunks")
+                else:
+                    explanation.append(f"Chunk {len(grouped_chunks)}: kept mini-chunk")
+    return grouped_chunks, explanation
+    
 def process_markdown(file_name: str, user_id: str, session_id: str):
     # Download file dari Supabase
     file_path = download_file_from_supabase(file_name, user_id, session_id)
@@ -166,7 +262,7 @@ def process_markdown(file_name: str, user_id: str, session_id: str):
 
             table_title = detect_table_title(pre_table_text)
             if pre_table_text:
-                text_chunks = split_text(pre_table_text, section_title)
+                text_chunks, _ = agentic_chunk_text(pre_table_text, section_title)
                 for chunk in text_chunks:
                     final_chunks.append({
                         "chunk_id": chunk_id,
@@ -180,13 +276,20 @@ def process_markdown(file_name: str, user_id: str, session_id: str):
                         }
                     })
                     chunk_id += 1
+                    
+            rows = [line.strip() for line in table_text.split("\n") if "|" in line]
+            headers = [cell.strip() for cell in rows[0].strip("|").split("|")]
+            data_rows = [[cell.strip() for cell in row.strip("|").split("|")] for row in rows[2:]]
             
-            table_chunks = extract_and_split_table(table_text)
-            if table_chunks:
-                for table_chunk in table_chunks:
+            if is_table_of_contents(data_rows):
+                toc_items.extend(structure_toc(data_rows, current_section))
+            else:
                     final_chunks.append({
                         "chunk_id": chunk_id,
-                        "table": table_chunk,
+                        "table": {
+                            "headers": headers,
+                            "rows": data_rows
+                        },
                         "metadata": {
                             "source": file_name_only,
                             "section": section_title,
@@ -200,7 +303,7 @@ def process_markdown(file_name: str, user_id: str, session_id: str):
         
         remaining_text = content[last_index:].strip()
         if remaining_text:
-            text_chunks = split_text(remaining_text, section_title)
+            text_chunks, _ = agentic_chunk_text(remaining_text, section_title)
             for chunk in text_chunks:
                 final_chunks.append({
                     "chunk_id": chunk_id,
@@ -214,6 +317,20 @@ def process_markdown(file_name: str, user_id: str, session_id: str):
                     }
                 })
                 chunk_id += 1
+
+    toc_items = autofill_toc_numbers(toc_items)
+    if toc_items:
+        final_chunks.insert(0, {
+            "chunk_id": 0,
+            "toc_items": toc_items,
+            "metadata": {
+                "source": file_name,
+                "section": "ToC",
+                "position": 0,
+                "user_id": user_id,
+                "session_id": session_id
+            }
+        })
 
     output_file = OUTPUT_DIR / file_name_only.replace(".md", ".json")
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -253,6 +370,15 @@ if __name__ == "__main__":
     #         input_path = os.path.join(input_folder, file_name)
     #         output_path = os.path.join(output_folder_c, file_name.replace(".md", ".json"))
     
+    model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        device_map="auto",
+        torch_dtype=torch.float16
+    )
+    model.eval()
+
     process_markdown(file_name, current_user, session_id)
 
 
